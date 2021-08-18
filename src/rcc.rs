@@ -28,6 +28,7 @@ impl RccExt for RCC {
                 pclk2: None,
                 sysclk: None,
                 adcclk: None,
+                hse_bypass: false,
             },
             bkp: BKP { _0: () },
         }
@@ -115,6 +116,7 @@ pub struct CFGR {
     pclk2: Option<u32>,
     sysclk: Option<u32>,
     adcclk: Option<u32>,
+    hse_bypass: bool,
 }
 
 impl CFGR {
@@ -171,6 +173,17 @@ impl CFGR {
         F: Into<Hertz>,
     {
         self.adcclk = Some(freq.into().0);
+        self
+    }
+
+    /// Enable `HSE` bypass.
+    ///
+    /// Meant for cases when `OSC_IN` is fed a clock signal from an
+    /// external oscillator.
+    ///
+    /// Has no effect if `HSE` is not enabled.
+    pub fn bypass_hse(mut self) -> Self {
+        self.hse_bypass = true;
         self
     }
 
@@ -307,7 +320,8 @@ impl CFGR {
         if self.hse.is_some() {
             // enable HSE and wait for it to be ready
 
-            rcc.cr.modify(|_, w| w.hseon().set_bit());
+            rcc.cr
+                .modify(|_, w| w.hsebyp().bit(self.hse_bypass).hseon().set_bit());
 
             while rcc.cr.read().hserdy().bit_is_clear() {}
         }
