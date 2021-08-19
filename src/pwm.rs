@@ -61,6 +61,8 @@ use crate::hal;
 use crate::pac::TIM1;
 #[cfg(feature = "medium")]
 use crate::pac::TIM4;
+#[cfg(all(feature = "stm32f103", feature = "high",))]
+use crate::pac::TIM8;
 use crate::pac::{TIM2, TIM3};
 use cast::{u16, u32};
 
@@ -218,6 +220,23 @@ impl Timer<TIM4> {
 
         let Self { tim, clk } = self;
         tim4(tim, _pins, freq.into(), clk)
+    }
+}
+
+#[cfg(all(feature = "stm32f103", feature = "high",))]
+impl Timer<TIM8> {
+    pub fn pwm<REMAP, P, PINS, T>(self, _pins: PINS, freq: T) -> Pwm<TIM8, REMAP, P, PINS>
+    where
+        REMAP: Remap<Periph = TIM8>,
+        PINS: Pins<REMAP, P>,
+        T: Into<Hertz>,
+    {
+        // TIM8 has a break function that deactivates the outputs, this bit automatically activates
+        // the output when no break input is present
+        self.tim.bdtr.modify(|_, w| w.aoe().set_bit());
+
+        let Self { tim, clk } = self;
+        tim8(tim, _pins, freq.into(), clk)
     }
 }
 
@@ -507,4 +526,9 @@ hal! {
 #[cfg(feature = "medium")]
 hal! {
     TIM4: (tim4),
+}
+
+#[cfg(all(feature = "stm32f103", feature = "high",))]
+hal! {
+    TIM8: (tim8),
 }

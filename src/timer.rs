@@ -163,6 +163,11 @@ remap!(
     Tim4Remap: (TIM4, 0b01, PD12, PD13, PD14, PD15),
 );
 
+#[cfg(all(feature = "stm32f103", feature = "high",))]
+remap!(
+    Tim8NoRemap: (TIM8, 0b00, PC6, PC7, PC8, PC9),
+);
+
 impl Timer<SYST> {
     pub fn syst(mut syst: SYST, clocks: &Clocks) -> Self {
         syst.set_clock_source(SystClkSource::Core);
