@@ -733,10 +733,9 @@ macro_rules! serialdma {
 
             impl<B> crate::dma::CircReadDmaGranular<B, u8> for $rxdma
             where
-                &'static mut [B; 1]: StaticWriteBuffer<Word = u8>,
-                B: 'static + AsSlice<Element = u8>
+                B: StaticWriteBuffer<Word = u8> + AsSlice<Element = u8>
             {
-                fn circ_read_granular(mut self, mut buffer: &'static mut [B; 1]) -> CircBufferGranular<B, Self> {
+                fn circ_read_granular(mut self, mut buffer: B) -> CircBufferGranular<B, Self> {
                     // NOTE(unsafe) We own the buffer now and we won't call other `&mut` on it
                     // until the end of the transfer.
                     let (ptr, len) = unsafe { buffer.static_write_buffer() };
