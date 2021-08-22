@@ -1,6 +1,7 @@
 //! # Direct Memory Access
 #![allow(dead_code)]
 
+use as_slice::AsSlice;
 use core::{
     marker::PhantomData,
     sync::atomic::{compiler_fence, Ordering},
@@ -43,6 +44,29 @@ where
             buffer: buf,
             payload,
             readable_half: Half::Second,
+        }
+    }
+}
+
+pub struct CircBufferGranular<BUFFER, PAYLOAD>
+where
+    BUFFER: 'static,
+{
+    buffer: &'static mut [BUFFER; 1],
+    payload: PAYLOAD,
+    position: usize,
+}
+
+impl<BUFFER, PAYLOAD> CircBufferGranular<BUFFER, PAYLOAD>
+where
+    &'static mut [BUFFER; 1]: StaticWriteBuffer,
+    BUFFER: 'static,
+{
+    pub(crate) fn new(buf: &'static mut [BUFFER; 1], payload: PAYLOAD) -> Self {
+        CircBufferGranular {
+            buffer: buf,
+            payload,
+            position: 0,
         }
     }
 }
@@ -122,11 +146,12 @@ macro_rules! dma {
     }),)+) => {
         $(
             pub mod $dmaX {
-                use core::{sync::atomic::{self, Ordering}, ptr, mem};
+                use as_slice::AsSlice;
+                use core::{sync::atomic::{self, Ordering}, ptr, mem, cmp};
 
                 use crate::pac::{RCC, $DMAX, dma1};
 
-                use crate::dma::{CircBuffer, DmaExt, Error, Event, Half, Transfer, W, RxDma, TxDma, RxTxDma, TransferPayload};
+                use crate::dma::{CircBuffer, CircBufferGranular, DmaExt, Error, Event, Half, Transfer, W, RxDma, TxDma, RxTxDma, TransferPayload};
                 use crate::rcc::Enable;
 
                 #[allow(clippy::manual_non_exhaustive)]
@@ -287,6 +312,72 @@ macro_rules! dma {
 
                         /// Stops the transfer and returns the underlying buffer and RxDma
                         pub fn stop(mut self) -> (&'static mut [B; 2], RxDma<PAYLOAD, $CX>) {
+                            self.payload.stop();
+
+                            (self.buffer, self.payload)
+                        }
+                    }
+
+                    impl<B, RS, PAYLOAD> CircBufferGranular<B, RxDma<PAYLOAD, $CX>>
+                    where
+                        B: AsSlice<Element = RS>,
+                        RS: Copy,
+                        RxDma<PAYLOAD, $CX>: TransferPayload,
+                    {
+                        /// Return the number of elements available to read
+                        pub fn elements_available(&self) -> usize {
+                            let buffer = self.buffer[0].as_slice();
+
+                            let blen = buffer.len();
+                            let ndtr = self.payload.channel.get_ndtr() as usize;
+                            let pos_at = self.position;
+
+                            // The position the DMA would write to next
+                            let pos_to = blen - ndtr;
+
+                            if pos_at > pos_to {
+                                // The buffer wrapped around
+                                blen + pos_to - pos_at
+                            } else {
+                                // The buffer did not wrap around
+                                pos_to - pos_at
+                            }
+                        }
+
+                        /// Copy data from the buffer into a slice.
+                        ///
+                        /// Returns the amount of elements read.
+                        pub fn read(&mut self, dat: &mut [RS]) -> usize {
+                            let buffer = self.buffer[0].as_slice();
+
+                            let blen = buffer.len();
+                            let len = self.elements_available();
+                            let pos = self.position;
+                            let read = cmp::min(dat.len(), len);
+
+                            if pos + read <= blen {
+                                // No wrapping, single read.
+                                atomic::compiler_fence(Ordering::Acquire);
+
+                                dat[0..read].copy_from_slice(&buffer[pos..pos + read]);
+                                self.position = pos + read;
+                            } else {
+                                let left = blen - pos;
+                                // Wrapped, two discontiguous reads.
+                                atomic::compiler_fence(Ordering::Acquire);
+
+                                // Copy until the end of the buffer
+                                dat[0..left].copy_from_slice(&buffer[pos..blen]);
+                                // Copy from the beginning of the buffer until the amount to read
+                                dat[left..read].copy_from_slice(&buffer[0..read - left]);
+                                self.position = read - left;
+                            }
+
+                            read
+                        }
+
+                        /// Stops the transfer and returns the underlying buffer and RxDma
+                        pub fn stop(mut self) -> (&'static mut [B; 1], RxDma<PAYLOAD, $CX>) {
                             self.payload.stop();
 
                             (self.buffer, self.payload)
@@ -568,6 +659,16 @@ where
     Self: core::marker::Sized,
 {
     fn circ_read(self, buffer: &'static mut [B; 2]) -> CircBuffer<B, Self>;
+}
+
+/// Trait for granular circular DMA readings from peripheral to memory.
+pub trait CircReadDmaGranular<B, RS>: Receive
+where
+    &'static mut [B; 1]: StaticWriteBuffer<Word = RS>,
+    B: 'static + AsSlice<Element = RS>,
+    Self: core::marker::Sized,
+{
+    fn circ_read_granular(self, buffer: &'static mut [B; 1]) -> CircBufferGranular<B, Self>;
 }
 
 /// Trait for DMA readings from peripheral to memory.
