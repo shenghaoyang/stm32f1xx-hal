@@ -42,12 +42,13 @@ use core::ptr;
 use core::sync::atomic::{self, Ordering};
 
 use crate::pac::{RCC, USART1, USART2, USART3};
+use as_slice::AsSlice;
 use core::convert::Infallible;
 use embedded_dma::{StaticReadBuffer, StaticWriteBuffer};
 use embedded_hal::serial::Write;
 
 use crate::afio::MAPR;
-use crate::dma::{dma1, CircBuffer, RxDma, Transfer, TxDma, R, W};
+use crate::dma::{dma1, CircBuffer, CircBufferGranular, RxDma, Transfer, TxDma, R, W};
 use crate::gpio::gpioa::{PA10, PA2, PA3, PA9};
 use crate::gpio::gpiob::{PB10, PB11, PB6, PB7};
 use crate::gpio::gpioc::{PC10, PC11};
@@ -727,6 +728,36 @@ macro_rules! serialdma {
                     self.start();
 
                     CircBuffer::new(buffer, self)
+                }
+            }
+
+            impl<B> crate::dma::CircReadDmaGranular<B, u8> for $rxdma
+            where
+                &'static mut [B; 1]: StaticWriteBuffer<Word = u8>,
+                B: 'static + AsSlice<Element = u8>
+            {
+                fn circ_read_granular(mut self, mut buffer: &'static mut [B; 1]) -> CircBufferGranular<B, Self> {
+                    // NOTE(unsafe) We own the buffer now and we won't call other `&mut` on it
+                    // until the end of the transfer.
+                    let (ptr, len) = unsafe { buffer.static_write_buffer() };
+                    self.channel.set_peripheral_address(unsafe{ &(*$USARTX::ptr()).dr as *const _ as u32 }, false);
+                    self.channel.set_memory_address(ptr as u32, true);
+                    self.channel.set_transfer_length(len);
+
+                    atomic::compiler_fence(Ordering::Release);
+
+                    self.channel.ch().cr.modify(|_, w| { w
+                        .mem2mem() .clear_bit()
+                        .pl()      .medium()
+                        .msize()   .bits8()
+                        .psize()   .bits8()
+                        .circ()    .set_bit()
+                        .dir()     .clear_bit()
+                    });
+
+                    self.start();
+
+                    CircBufferGranular::new(buffer, self)
                 }
             }
 

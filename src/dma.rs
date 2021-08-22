@@ -50,19 +50,18 @@ where
 
 pub struct CircBufferGranular<BUFFER, PAYLOAD>
 where
-    BUFFER: 'static,
+    PAYLOAD: TransferPayload,
 {
-    buffer: &'static mut [BUFFER; 1],
+    buffer: BUFFER,
     payload: PAYLOAD,
     position: usize,
 }
 
 impl<BUFFER, PAYLOAD> CircBufferGranular<BUFFER, PAYLOAD>
 where
-    &'static mut [BUFFER; 1]: StaticWriteBuffer,
-    BUFFER: 'static,
+    PAYLOAD: TransferPayload,
 {
-    pub(crate) fn new(buf: &'static mut [BUFFER; 1], payload: PAYLOAD) -> Self {
+    pub(crate) fn new(buf: BUFFER, payload: PAYLOAD) -> Self {
         CircBufferGranular {
             buffer: buf,
             payload,
@@ -326,7 +325,7 @@ macro_rules! dma {
                     {
                         /// Return the number of elements available to read
                         pub fn elements_available(&self) -> usize {
-                            let buffer = self.buffer[0].as_slice();
+                            let buffer = self.buffer.as_slice();
 
                             let blen = buffer.len();
                             let ndtr = self.payload.channel.get_ndtr() as usize;
@@ -347,13 +346,24 @@ macro_rules! dma {
                         /// Copy data from the buffer into a slice.
                         ///
                         /// Returns the amount of elements read.
+                        ///
+                        /// Will also clear the half transfer / transfer
+                        /// complete flags, if set.
                         pub fn read(&mut self, dat: &mut [RS]) -> usize {
-                            let buffer = self.buffer[0].as_slice();
+                            let buffer = self.buffer.as_slice();
 
                             let blen = buffer.len();
                             let len = self.elements_available();
                             let pos = self.position;
                             let read = cmp::min(dat.len(), len);
+
+                            let isr = self.payload.channel.isr();
+                            if isr.$htifX().bit_is_set() {
+                                self.payload.channel.ifcr().write(|w| w.$ctcifX().set_bit());
+                            }
+                            if isr.$tcifX().bit_is_set() {
+                                self.payload.channel.ifcr().write(|w| w.$chtifX().set_bit());
+                            }
 
                             if pos + read <= blen {
                                 // No wrapping, single read.
@@ -374,13 +384,6 @@ macro_rules! dma {
                             }
 
                             read
-                        }
-
-                        /// Stops the transfer and returns the underlying buffer and RxDma
-                        pub fn stop(mut self) -> (&'static mut [B; 1], RxDma<PAYLOAD, $CX>) {
-                            self.payload.stop();
-
-                            (self.buffer, self.payload)
                         }
                     }
 
@@ -664,11 +667,10 @@ where
 /// Trait for granular circular DMA readings from peripheral to memory.
 pub trait CircReadDmaGranular<B, RS>: Receive
 where
-    &'static mut [B; 1]: StaticWriteBuffer<Word = RS>,
-    B: 'static + AsSlice<Element = RS>,
-    Self: core::marker::Sized,
+    B: StaticWriteBuffer<Word = RS> + AsSlice<Element = RS>,
+    Self: core::marker::Sized + TransferPayload,
 {
-    fn circ_read_granular(self, buffer: &'static mut [B; 1]) -> CircBufferGranular<B, Self>;
+    fn circ_read_granular(self, buffer: B) -> CircBufferGranular<B, Self>;
 }
 
 /// Trait for DMA readings from peripheral to memory.
