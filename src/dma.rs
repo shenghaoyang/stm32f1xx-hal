@@ -359,10 +359,10 @@ macro_rules! dma {
 
                             let isr = self.payload.channel.isr();
                             if isr.$htifX().bit_is_set() {
-                                self.payload.channel.ifcr().write(|w| w.$ctcifX().set_bit());
+                                self.payload.channel.ifcr().write(|w| w.$chtifX().set_bit());
                             }
                             if isr.$tcifX().bit_is_set() {
-                                self.payload.channel.ifcr().write(|w| w.$chtifX().set_bit());
+                                self.payload.channel.ifcr().write(|w| w.$ctcifX().set_bit());
                             }
 
                             if pos + read <= blen {
