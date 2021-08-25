@@ -352,11 +352,6 @@ macro_rules! dma {
                         pub fn read(&mut self, dat: &mut [RS]) -> usize {
                             let buffer = self.buffer.as_slice();
 
-                            let blen = buffer.len();
-                            let len = self.elements_available();
-                            let pos = self.position;
-                            let read = cmp::min(dat.len(), len);
-
                             let isr = self.payload.channel.isr();
                             if isr.$htifX().bit_is_set() {
                                 self.payload.channel.ifcr().write(|w| w.$chtifX().set_bit());
@@ -364,6 +359,11 @@ macro_rules! dma {
                             if isr.$tcifX().bit_is_set() {
                                 self.payload.channel.ifcr().write(|w| w.$ctcifX().set_bit());
                             }
+
+                            let blen = buffer.len();
+                            let len = self.elements_available();
+                            let pos = self.position;
+                            let read = cmp::min(dat.len(), len);
 
                             if pos + read <= blen {
                                 // No wrapping, single read.
