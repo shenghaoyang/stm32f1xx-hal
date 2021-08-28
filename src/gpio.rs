@@ -189,6 +189,8 @@ use sealed::PinMode;
 
 use sealed::Interruptable;
 impl<MODE> Interruptable for Input<MODE> {}
+impl<MODE> Interruptable for Output<MODE> {}
+impl<MODE> Interruptable for Alternate<MODE> {}
 
 /// External Interrupt Pin
 pub trait ExtiPin {
