@@ -54,6 +54,11 @@ pub struct QeiOptions {
     /// This value allows the maximum count to be configured, up to 65535. Setting a lower value
     /// will overflow the counter to 0 sooner.
     pub auto_reload_value: u16,
+
+    /// Whether to invert TI1.
+    pub invert_ti1: bool,
+    /// Whether to invert TI2.
+    pub invert_ti2: bool,
 }
 
 impl Default for QeiOptions {
@@ -61,6 +66,8 @@ impl Default for QeiOptions {
         Self {
             slave_mode: SlaveMode::EncoderMode3,
             auto_reload_value: u16::MAX,
+            invert_ti1: false,
+            invert_ti2: false,
         }
     }
 }
@@ -158,11 +165,11 @@ macro_rules! hal {
                         w.cc1e()
                             .set_bit()
                             .cc1p()
-                            .clear_bit()
+                            .bit(options.invert_ti1)
                             .cc2e()
                             .set_bit()
                             .cc2p()
-                            .clear_bit()
+                            .bit(options.invert_ti2)
                     });
 
                     // configure as quadrature encoder
