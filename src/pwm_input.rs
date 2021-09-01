@@ -15,7 +15,7 @@ use crate::afio::MAPR;
 use crate::gpio::{self, Input};
 use crate::rcc::{Clocks, GetBusFreq, RccBus};
 use crate::time::Hertz;
-use crate::timer::Timer;
+use crate::timer::{InputFpConfig, InputFpConfigurable, Timer};
 
 pub trait Pins<REMAP> {}
 
@@ -299,6 +299,18 @@ macro_rules! hal {
                 fn wait_for_capture(&self) {
                     unsafe { (*$TIMX::ptr()).sr.write(|w| w.uif().clear_bit().cc1if().clear_bit().cc1of().clear_bit())};
                     while unsafe { (*$TIMX::ptr()).sr.read().cc1if().bit_is_clear()} {}
+                }
+            }
+
+            impl InputFpConfigurable for $TIMX {
+                fn apply_ifp_config(&self, config: &InputFpConfig) {
+                    self.ccer.modify(|_, w| w
+                        .cc1p().bit(config.ti1_invert)
+                        .cc2p().bit(config.ti2_invert));
+                    self.ccmr1_input_mut().modify(|_, w| w
+                        .ic1f().bits(config.ti1_filter.as_icxf_bits()));
+                    self.ccmr1_input_mut().modify(|_, w| w
+                        .ic2f().bits(config.ti2_filter.as_icxf_bits()));
                 }
             }
         )+

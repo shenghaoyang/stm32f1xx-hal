@@ -88,6 +88,63 @@ pub enum Error {
     Canceled,
 }
 
+/// Length of the filter when clocked from the counter's internal clock.
+#[derive(Copy, Clone, Debug)]
+pub enum InternalFilterLength {
+    Two = 0x1,
+    Four = 0x2,
+    Eight = 0x3,
+}
+
+/// Input filter configuration.
+#[derive(Copy, Clone, Debug)]
+pub enum InputFilter {
+    /// Input filter is disabled. Input sampling is done at FDts.
+    Disabled,
+    /// Input filter enabled and is clocked from the internal clock of the timer.
+    Internal(InternalFilterLength),
+}
+
+impl InputFilter {
+    /// Obtain the bits of the ICxF field that corresponds to this input filter
+    /// selection.
+    pub(crate) fn as_icxf_bits(&self) -> u8 {
+        match self {
+            InputFilter::Disabled => 0x00,
+            InputFilter::Internal(fl) => *fl as u8,
+        }
+    }
+}
+
+/// Input filter & polarity configuration.
+#[derive(Copy, Clone, Debug)]
+pub struct InputFpConfig {
+    /// Whether to input the TI1 signal.
+    pub ti1_invert: bool,
+    /// Whether to invert the TI2 signal.
+    pub ti2_invert: bool,
+
+    /// Filter configuration for TI1.
+    pub ti1_filter: InputFilter,
+    /// Filter configuration for TI2.
+    pub ti2_filter: InputFilter,
+}
+
+pub(crate) trait InputFpConfigurable {
+    fn apply_ifp_config(&self, config: &InputFpConfig);
+}
+
+impl Default for InputFpConfig {
+    fn default() -> Self {
+        Self {
+            ti1_invert: false,
+            ti2_invert: false,
+            ti1_filter: InputFilter::Disabled,
+            ti2_filter: InputFilter::Disabled,
+        }
+    }
+}
+
 pub struct Timer<TIM> {
     pub(crate) tim: TIM,
     pub(crate) clk: Hertz,

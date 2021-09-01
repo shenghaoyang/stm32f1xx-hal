@@ -18,7 +18,7 @@ use crate::pac::{TIM2, TIM3};
 use crate::afio::MAPR;
 
 use crate::pwm_input::Pins;
-use crate::timer::{sealed::Remap, Timer};
+use crate::timer::{sealed::Remap, InputFpConfig, InputFpConfigurable, Timer};
 
 /// SMS (Slave Mode Selection) register
 #[derive(Copy, Clone, Debug)]
@@ -55,10 +55,8 @@ pub struct QeiOptions {
     /// will overflow the counter to 0 sooner.
     pub auto_reload_value: u16,
 
-    /// Whether to invert TI1.
-    pub invert_ti1: bool,
-    /// Whether to invert TI2.
-    pub invert_ti2: bool,
+    /// Input filter & polarity configuration.
+    pub ifp_config: InputFpConfig,
 }
 
 impl Default for QeiOptions {
@@ -66,8 +64,7 @@ impl Default for QeiOptions {
         Self {
             slave_mode: SlaveMode::EncoderMode3,
             auto_reload_value: u16::MAX,
-            invert_ti1: false,
-            invert_ti2: false,
+            ifp_config: InputFpConfig::default(),
         }
     }
 }
@@ -164,13 +161,12 @@ macro_rules! hal {
                     tim.ccer.write(|w| {
                         w.cc1e()
                             .set_bit()
-                            .cc1p()
-                            .bit(options.invert_ti1)
                             .cc2e()
                             .set_bit()
-                            .cc2p()
-                            .bit(options.invert_ti2)
                     });
+
+                    // configure input filter
+                    tim.apply_ifp_config(&options.ifp_config);
 
                     // configure as quadrature encoder
                     tim.smcr.write(|w| w.sms().bits(options.slave_mode as u8));
